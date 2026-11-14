@@ -9,7 +9,7 @@ public class ProductPriorityHeap {
     private int size;
     private int capacity;
 
-    public ProductPriorityHeap(int capacity) {
+    public ProductPriorityHeap() {
         this.capacity = Math.max(1, capacity);
         heap = new Product[this.capacity];
         size = 0;
