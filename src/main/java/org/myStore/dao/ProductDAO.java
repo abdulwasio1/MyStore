@@ -3,10 +3,7 @@ package org.myStore.dao;
 import org.myStore.db.dbConnection;
 import org.myStore.entities.Product;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 
 public class ProductDAO {
@@ -45,6 +42,60 @@ public class ProductDAO {
         }
 
         return products;
+    }
+
+    public int addProduct(Product product) throws SQLException {
+
+        String query = "INSERT INTO products " +
+                "(product_name, sku, category, price, quantity, reorder_level) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+
+        try (
+                Connection con = dbConnection.getConnection();
+                PreparedStatement pst = con.prepareStatement(
+                        query, Statement.RETURN_GENERATED_KEYS)
+        ) {
+
+            pst.setString(1, product.getProductName());
+            pst.setString(2, product.getSku());
+            pst.setString(3, product.getCategory());
+            pst.setBigDecimal(4, product.getPrice());
+            pst.setInt(5, product.getQuantity());
+            pst.setInt(6, product.getReorderLevel());
+
+            int rowsAffected = pst.executeUpdate();
+
+            if (rowsAffected == 0) {
+                return -1;
+            }
+
+            // Get the auto-generated product ID
+            try (ResultSet rs = pst.getGeneratedKeys()) {
+
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    public static boolean skuExists(String sku) throws SQLException {
+
+        String query = "SELECT 1 FROM products WHERE sku = ?";
+
+        try (
+                Connection con = dbConnection.getConnection();
+                PreparedStatement pst = con.prepareStatement(query)
+        ) {
+
+            pst.setString(1, sku);
+
+            try (ResultSet rs = pst.executeQuery()) {
+                return rs.next();
+            }
+        }
     }
 
 }
