@@ -5,7 +5,7 @@ import java.util.ArrayList;
 
 public class ProductSearch {
 
-    public ArrayList<Product> searchByName(
+    public static ArrayList<Product> searchByName(
             ArrayList<Product> products, String searchName) {
 
         ArrayList<Product> results = new ArrayList<>();

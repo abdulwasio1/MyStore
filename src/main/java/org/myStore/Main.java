@@ -1,11 +1,15 @@
 
 package org.myStore;
 
-import org.myStore.dao.*;
+import org.myStore.auth.AuthService;
+import org.myStore.auth.Role;
+import org.myStore.auth.Session;
+import org.myStore.dao.ProductDAO;
+import org.myStore.entities.Product;
+import org.myStore.entities.User;
 import org.myStore.dsa.ProductHashTable;
 import org.myStore.dsa.ProductPriorityHeap;
 import org.myStore.dsa.ProductSearch;
-import org.myStore.entities.Product;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -14,177 +18,415 @@ import java.util.Scanner;
 
 public class Main {
 
-    static Scanner sc = new Scanner(System.in);
+    public static void main(String[] args) {
 
-    public static void main(String[] args) throws SQLException {
+        Scanner sc = new Scanner(System.in);
 
         ProductDAO dao = new ProductDAO();
+        AuthService authService = new AuthService();
 
-        // Load products from MySQL
+        // Load products from database
         ArrayList<Product> products = dao.getAllProducts();
 
-        // Build SKU Hash Table
+        // Build Hash Table using existing products
         ProductHashTable hashTable = buildHashTable(products);
 
-        // Product name search object
-        ProductSearch productSearch = new ProductSearch();
+        boolean running = true;
 
-        int choice;
+        while (running) {
 
-        do {
-            System.out.println("\n===== INVENTORY MANAGEMENT SYSTEM =====");
-            System.out.println("1. Add Product");
-            System.out.println("2. Search Product by SKU");
-            System.out.println("3. Search Product by Name");
-            System.out.println("4. View Low Stock Priorities");
-            System.out.println("0. Exit");
+            // ================= LOGIN =================
 
-            choice = readInt("Enter your choice: ");
+            User user = loginUser(sc, authService);
 
-            switch (choice) {
-
-                case 1:
-
-                    Product newProduct = inputProduct();
-
-                    try {
-
-                        int generatedId = dao.addProduct(newProduct);
-
-                        if (generatedId != -1) {
-
-                            System.out.println("\nProduct added successfully!");
-                            System.out.println("Generated Product ID: " + generatedId);
-
-                            // Reload products from database
-                            products = dao.getAllProducts();
-
-                            // Rebuild hash table with updated products
-                            hashTable = buildHashTable(products);
-
-                        } else {
-                            System.out.println("Product could not be added!");
-                        }
-
-                    } catch (SQLException e) {
-
-                        if (e.getErrorCode() == 1062) {
-                            System.out.println("Error: This SKU already exists!");
-                        } else if (e.getErrorCode() == 3819) {
-                            System.out.println("Error: Product values violate a database CHECK constraint!");
-                        } else {
-                            System.out.println("Database Error: " + e.getMessage());
-                        }
-                    }
-
-                    break;
-
-                case 2:
-
-                    // Search by SKU
-                    System.out.print("\nEnter Product SKU: ");
-                    String sku = sc.nextLine().trim();
-
-                    Product result = hashTable.search(sku);
-
-                    if (result != null) {
-                        System.out.println("\n===== PRODUCT FOUND =====");
-                        displayProduct(result);
-                    } else {
-                        System.out.println("Product not found!");
-                    }
-
-                    break;
-
-                case 3:
-
-                    // Search by Name
-                    System.out.print("\nEnter Product Name: ");
-                    String name = sc.nextLine();
-
-                    ArrayList<Product> results =
-                            productSearch.searchByName(products, name);
-
-                    if (results.isEmpty()) {
-                        System.out.println("No matching products found!");
-                    } else {
-
-                        System.out.println("\n===== SEARCH RESULTS =====");
-
-                        for (Product p : results) {
-                            displayProduct(p);
-                        }
-                    }
-
-                    break;
-
-                case 4:
-
-                    // Create Max Heap for low-stock products
-                    ProductPriorityHeap priorityHeap =
-                            new ProductPriorityHeap(products.size());
-
-                    for (Product p : products) {
-                        priorityHeap.insert(p);
-                    }
-
-                    if (priorityHeap.isEmpty()) {
-
-                        System.out.println("\nNo products require restocking!");
-
-                    } else {
-
-                        System.out.println("\n===== LOW STOCK PRIORITIES =====");
-
-                        while (!priorityHeap.isEmpty()) {
-
-                            Product p = priorityHeap.extractMax();
-
-                            System.out.println("\nStock Shortage: " +
-                                    (p.getReorderLevel() - p.getQuantity()));
-
-                            displayProduct(p);
-                        }
-                    }
-
-                    break;
-
-                case 0:
-
-                    System.out.println("\nExiting Inventory System...");
-                    break;
-
-                default:
-
-                    System.out.println("\nInvalid choice! Try again.");
+            if (user == null) {
+                continue;
             }
 
-        } while (choice != 0);
+            Session.login(user);
+
+            System.out.println("\nLogin successful!");
+            System.out.println("Welcome, " + user.getUsername());
+            System.out.println("Role: " + user.getRole());
+
+            boolean logout = false;
+
+            // ================= USER MENU =================
+
+            while (!logout) {
+
+                System.out.println("\n========== MYSTORE ==========");
+
+                if (Session.hasRole(Role.ADMIN)) {
+                    System.out.println("Logged in as: ADMIN");
+                } else {
+                    System.out.println("Logged in as: STAFF");
+                }
+
+                System.out.println("\n1. Search Product by SKU");
+                System.out.println("2. Search Product by Name");
+                System.out.println("3. View Low Stock Priorities");
+
+                // ADMIN-only options
+                if (Session.hasRole(Role.ADMIN)) {
+                    System.out.println("4. Add New Product");
+                    System.out.println("5. Create Staff Account");
+                }
+
+                System.out.println("0. Logout");
+
+                System.out.print("\nEnter your choice: ");
+
+                int choice;
+
+                try {
+                    choice = Integer.parseInt(sc.nextLine().trim());
+                } catch (NumberFormatException e) {
+                    System.out.println("Please enter a valid number!");
+                    continue;
+                }
+
+                switch (choice) {
+
+                    // ================= SEARCH BY SKU =================
+
+                    case 1:
+
+                        System.out.print("\nEnter Product SKU: ");
+                        String sku = sc.nextLine().trim();
+
+                        Product foundProduct = hashTable.search(sku);
+
+                        if (foundProduct != null) {
+                            System.out.println("\nProduct Found!");
+                            displayProduct(foundProduct);
+                        } else {
+                            System.out.println("\nProduct not found!");
+                        }
+
+                        break;
+
+                    // ================= SEARCH BY NAME =================
+
+                    case 2:
+
+                        System.out.print("\nEnter Product Name: ");
+                        String keyword = sc.nextLine().trim();
+
+                        if (keyword.isEmpty()) {
+                            System.out.println("Search keyword cannot be empty!");
+                            break;
+                        }
+
+                        ArrayList<Product> results =
+                                ProductSearch.searchByName(products, keyword);
+
+                        if (results.isEmpty()) {
+                            System.out.println("\nNo matching products found!");
+                        } else {
+
+                            System.out.println("\n===== SEARCH RESULTS =====");
+
+                            for (Product p : results) {
+                                displayProduct(p);
+                            }
+                        }
+
+                        break;
+
+                    // ================= LOW STOCK PRIORITIES =================
+
+                    case 3:
+
+                        ProductPriorityHeap heap =
+                                new ProductPriorityHeap(
+                                        Math.max(10, products.size())
+                                );
+
+                        // Insert only low-stock products
+                        for (Product p : products) {
+
+                            if (p.getQuantity() <= p.getReorderLevel()) {
+                                heap.insert(p);
+                            }
+                        }
+
+                        if (heap.isEmpty()) {
+                            System.out.println("\nNo low-stock products!");
+                        } else {
+
+                            System.out.println(
+                                    "\n===== LOW STOCK PRIORITIES ====="
+                            );
+
+                            while (!heap.isEmpty()) {
+
+                                Product p = heap.extractMax();
+
+                                displayProduct(p);
+
+                                System.out.println(
+                                        "Shortage: "
+                                                + (p.getReorderLevel()
+                                                - p.getQuantity())
+                                );
+
+                                System.out.println("--------------------------");
+                            }
+                        }
+
+                        break;
+
+                    // ================= ADD PRODUCT =================
+
+                    case 4:
+
+                        try {
+
+                            // Only ADMIN can add products
+                            Session.requireAdmin();
+
+                            addProduct(sc, dao);
+
+                            // Refresh products from database
+                            products = dao.getAllProducts();
+
+                            // Rebuild Hash Table
+                            hashTable = buildHashTable(products);
+
+                        } catch (SecurityException e) {
+
+                            System.out.println(e.getMessage());
+
+                        } catch (SQLException e) {
+
+                            if (e.getErrorCode() == 1062) {
+                                System.out.println(
+                                        "\nError: This SKU already exists!"
+                                );
+                            } else {
+                                System.out.println(
+                                        "\nDatabase Error: " + e.getMessage()
+                                );
+                            }
+                        }
+
+                        break;
+
+                    // ================= CREATE STAFF ACCOUNT =================
+
+                    case 5:
+
+                        try {
+
+                            // Only ADMIN can create staff accounts
+                            Session.requireAdmin();
+
+                            System.out.println(
+                                    "\n===== CREATE STAFF ACCOUNT ====="
+                            );
+
+                            System.out.print("Enter Username: ");
+                            String newUsername = sc.nextLine().trim();
+
+                            System.out.print("Enter Password: ");
+                            String newPassword = sc.nextLine();
+
+                            authService.createStaffAccount(
+                                    newUsername,
+                                    newPassword
+                            );
+
+                            System.out.println(
+                                    "\nStaff account created successfully!"
+                            );
+
+                        } catch (SecurityException |
+                                 IllegalArgumentException e) {
+
+                            System.out.println(e.getMessage());
+
+                        } catch (SQLException e) {
+
+                            if (e.getErrorCode() == 1062) {
+                                System.out.println(
+                                        "Username already exists!"
+                                );
+                            } else {
+                                System.out.println(
+                                        "Database Error: " + e.getMessage()
+                                );
+                            }
+                        }
+
+                        break;
+
+                    // ================= LOGOUT =================
+
+                    case 0:
+
+                        Session.logout();
+
+                        System.out.println(
+                                "\nLogged out successfully!"
+                        );
+
+                        logout = true;
+
+                        break;
+
+                    default:
+
+                        System.out.println("Invalid choice!");
+
+                }
+            }
+        }
 
         sc.close();
     }
 
-    // Take product details from user
-    public static Product inputProduct() throws SQLException {
+
+    // ================= LOGIN METHOD =================
+
+    public static User loginUser(
+            Scanner sc,
+            AuthService authService) {
+
+        while (true) {
+
+            System.out.println("\n========== MYSTORE LOGIN ==========");
+
+            System.out.print("Username: ");
+            String username = sc.nextLine().trim();
+
+            System.out.print("Password: ");
+            String password = sc.nextLine();
+
+            try {
+
+                User user = authService.login(username, password);
+
+                if (user != null) {
+                    return user;
+                }
+
+                System.out.println(
+                        "\nInvalid username or password!"
+                );
+
+            } catch (SQLException e) {
+
+                System.out.println(
+                        "\nDatabase Error: " + e.getMessage()
+                );
+
+                return null;
+            }
+        }
+    }
+
+
+    // ================= BUILD HASH TABLE =================
+
+    public static ProductHashTable buildHashTable(
+            ArrayList<Product> products) {
+
+        ProductHashTable hashTable = new ProductHashTable(
+                Math.max(10, products.size() * 2)
+        );
+
+        for (Product p : products) {
+            hashTable.insert(p);
+        }
+
+        return hashTable;
+    }
+
+
+    // ================= DISPLAY PRODUCT =================
+
+    public static void displayProduct(Product p) {
+
+        System.out.println("\n--------------------------");
+        System.out.println("Product ID: " + p.getProductId());
+        System.out.println("SKU: " + p.getSku());
+        System.out.println("Name: " + p.getProductName());
+        System.out.println("Category: " + p.getCategory());
+        System.out.println("Price: " + p.getPrice());
+        System.out.println("Quantity: " + p.getQuantity());
+        System.out.println("Reorder Level: " + p.getReorderLevel());
+        System.out.println("--------------------------");
+    }
+
+    public static void registerStaff(
+            Scanner sc,
+            AuthService authService) {
+
+        System.out.println("\n===== STAFF REGISTRATION =====");
+
+        System.out.print("Enter Username: ");
+        String username = sc.nextLine().trim();
+
+        System.out.print("Enter Password: ");
+        String password = sc.nextLine();
+
+        System.out.print("Confirm Password: ");
+        String confirmPassword = sc.nextLine();
+
+        if (!password.equals(confirmPassword)) {
+            System.out.println("Passwords do not match!");
+            return;
+        }
+
+        try {
+
+            authService.createStaffAccount(username, password);
+
+            System.out.println("\nRegistration successful!");
+            System.out.println("Your account role is STAFF.");
+            System.out.println("You can now log in.");
+
+        } catch (IllegalArgumentException e) {
+
+            System.out.println(e.getMessage());
+
+        } catch (SQLException e) {
+
+            if (e.getErrorCode() == 1062) {
+                System.out.println("Username already exists!");
+            } else {
+                System.out.println(
+                        "Database Error: " + e.getMessage()
+                );
+            }
+        }
+    }
+
+
+    // ================= ADD PRODUCT =================
+
+    public static void addProduct(
+            Scanner sc,
+            ProductDAO dao) throws SQLException {
 
         System.out.println("\n===== ADD NEW PRODUCT =====");
 
-        Product p = new Product();
-
-        // Product name
+        // Product Name
         String name;
 
-        do {
+        while (true) {
+
             System.out.print("Enter Product Name: ");
             name = sc.nextLine().trim();
 
-            if (name.isEmpty()) {
-                System.out.println("Product name cannot be empty!");
+            if (!name.isEmpty()) {
+                break;
             }
 
-        } while (name.isEmpty());
+            System.out.println("Product name cannot be empty!");
+        }
 
-        p.setProductName(name);
 
         // SKU
         String sku;
@@ -199,25 +441,26 @@ public class Main {
                 continue;
             }
 
-            if (ProductDAO.skuExists(sku)) {
-                System.out.println("This SKU already exists! Enter another SKU.");
+            // Check duplicate SKU immediately
+            if (dao.skuExists(sku)) {
+                System.out.println(
+                        "This SKU already exists! Enter another SKU."
+                );
                 continue;
             }
 
             break;
         }
 
-        p.setSku(sku);
 
-        // Category (optional)
+        // Category
         System.out.print("Enter Category: ");
         String category = sc.nextLine().trim();
 
         if (category.isEmpty()) {
-            p.setCategory(null);
-        } else {
-            p.setCategory(category);
+            category = null;
         }
+
 
         // Price
         BigDecimal price;
@@ -225,96 +468,85 @@ public class Main {
         while (true) {
 
             System.out.print("Enter Selling Price: ");
-            String priceInput = sc.nextLine().trim();
 
             try {
 
-                price = new BigDecimal(priceInput);
+                price = new BigDecimal(sc.nextLine().trim());
 
-                if (price.compareTo(BigDecimal.ZERO) < 0) {
-                    System.out.println("Price cannot be negative!");
-                } else {
+                if (price.compareTo(BigDecimal.ZERO) >= 0) {
                     break;
                 }
 
+                System.out.println("Price cannot be negative!");
+
             } catch (NumberFormatException e) {
+
                 System.out.println("Enter a valid price!");
             }
         }
 
-        p.setPrice(price);
 
         // Quantity
-        int quantity;
+        int quantity = readNonNegativeInt(
+                sc,
+                "Enter Quantity: "
+        );
 
-        do {
-            quantity = readInt("Enter Quantity: ");
 
-            if (quantity < 0) {
-                System.out.println("Quantity cannot be negative!");
-            }
+        // Reorder Level
+        int reorderLevel = readNonNegativeInt(
+                sc,
+                "Enter Reorder Level: "
+        );
 
-        } while (quantity < 0);
 
-        p.setQuantity(quantity);
+        // Create Product Object
+        Product product = new Product();
 
-        // Reorder level
-        int reorderLevel;
+        product.setProductName(name);
+        product.setSku(sku);
+        product.setCategory(category);
+        product.setPrice(price);
+        product.setQuantity(quantity);
+        product.setReorderLevel(reorderLevel);
 
-        do {
-            reorderLevel = readInt("Enter Reorder Level: ");
 
-            if (reorderLevel < 0) {
-                System.out.println("Reorder level cannot be negative!");
-            }
+        // Save Product in Database
+        int productId = dao.addProduct(product);
 
-        } while (reorderLevel < 0);
-
-        p.setReorderLevel(reorderLevel);
-
-        return p;
+        System.out.println("\nProduct added successfully!");
+        System.out.println("Generated Product ID: " + productId);
     }
 
-    // Read integer safely
-    public static int readInt(String message) {
+
+    // ================= READ NON-NEGATIVE INTEGER =================
+
+    public static int readNonNegativeInt(
+            Scanner sc,
+            String message) {
 
         while (true) {
 
             System.out.print(message);
-            String input = sc.nextLine().trim();
 
             try {
-                return Integer.parseInt(input);
+
+                int value = Integer.parseInt(
+                        sc.nextLine().trim()
+                );
+
+                if (value >= 0) {
+                    return value;
+                }
+
+                System.out.println("Value cannot be negative!");
 
             } catch (NumberFormatException e) {
-                System.out.println("Please enter a valid whole number!");
+
+                System.out.println(
+                        "Please enter a valid whole number!"
+                );
             }
         }
-    }
-
-    // Build SKU Hash Table
-    public static ProductHashTable buildHashTable(ArrayList<Product> products) {
-
-        ProductHashTable hashTable = new ProductHashTable(10);
-
-        for (Product p : products) {
-            hashTable.insert(p);
-        }
-
-        return hashTable;
-    }
-
-    // Display product details
-    public static void displayProduct(Product p) {
-
-        System.out.println("-----------------------------");
-        System.out.println("Product ID: " + p.getProductId());
-        System.out.println("SKU: " + p.getSku());
-        System.out.println("Name: " + p.getProductName());
-        System.out.println("Category: " + p.getCategory());
-        System.out.println("Price: " + p.getPrice());
-        System.out.println("Quantity: " + p.getQuantity());
-        System.out.println("Reorder Level: " + p.getReorderLevel());
-        System.out.println("-----------------------------");
     }
 }
