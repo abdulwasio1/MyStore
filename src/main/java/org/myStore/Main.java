@@ -71,7 +71,7 @@ public class Main {
                 } else {
                     System.out.println("4. View All Products");
                     System.out.println("5. Submit Stock Request");
-                    System.out.println("6. View My Requests");
+                    System.out.println("6. View All My Requests");
                 }
 
                 System.out.println("0. Logout");

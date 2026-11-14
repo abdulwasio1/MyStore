@@ -124,7 +124,7 @@ public class StockRequestDAO {
                 FOR UPDATE
                 """;
 
-        String updateProductQuery = """
+        String updateProductQuery =  """
                 UPDATE products
                 SET quantity = ?
                 WHERE product_id = ?

@@ -10,7 +10,7 @@ public class StockRequestQueue {
         StockRequest data;
         Node next;
 
-        Node(StockRequest data) {
+        Node(StockRequest data ) {
             this.data = data;
             this.next = null;
         }
