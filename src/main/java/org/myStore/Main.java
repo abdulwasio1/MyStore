@@ -68,6 +68,7 @@ public class Main {
                     System.out.println("5. Add New Product");
                     System.out.println("6. Create Staff Account");
                     System.out.println("7. Process Stock Requests");
+                    System.out.println("8. Update Product");
                 } else {
                     System.out.println("4. View All Products");
                     System.out.println("5. Submit Stock Request");
@@ -75,9 +76,7 @@ public class Main {
                 }
 
                 System.out.println("0. Logout");
-                System.out.print("Enter choice: ");
-
-                int choice = readNonNegativeInt(sc, "Choice: ");
+                int choice = readNonNegativeInt(sc, "Enter choice: ");
 
                 try {
 
@@ -142,6 +141,22 @@ public class Main {
 
                                 System.out.println("Invalid choice!");
 
+                            }
+
+                            break;
+                        case 8:
+
+                            if (Session.hasRole(Role.ADMIN)) {
+
+                                boolean updated = updateProduct(sc, productDAO, hashTable);
+
+                                if (updated) {
+                                    products = productDAO.getAllProducts();
+                                    hashTable = buildHashTable(products);
+                                }
+
+                            } else {
+                                System.out.println("Access denied!");
                             }
 
                             break;
@@ -219,6 +234,286 @@ public class Main {
 
         return hashTable;
     }
+
+
+
+
+    private static boolean updateProduct(
+            Scanner sc,
+            ProductDAO productDAO,
+            ProductHashTable hashTable) throws SQLException {
+
+        Session.requireAdmin();
+
+        System.out.println("\n========== UPDATE PRODUCT ==========");
+        System.out.println("1. Search by Product ID");
+        System.out.println("2. Search by SKU");
+        System.out.println("3. Search by Product Name");
+
+        int choice = readNonNegativeInt(sc, "Choose search method: ");
+
+        Product product = null;
+
+        // ================= SEARCH PRODUCT =================
+
+        if (choice == 1) {
+
+            int productId = readPositiveInt(sc, "Enter Product ID: ");
+
+            ArrayList<Product> products = productDAO.getAllProducts();
+
+            for (Product p : products) {
+                if (p.getProductId() == productId) {
+                    product = p;
+                    break;
+                }
+            }
+
+        } else if (choice == 2) {
+
+            System.out.print("Enter SKU: ");
+            String sku = sc.nextLine().trim();
+
+            product = hashTable.search(sku);
+
+        } else if (choice == 3) {
+
+            System.out.print("Enter Product Name: ");
+            String name = sc.nextLine().trim();
+
+            if (name.isEmpty()) {
+                System.out.println("Product name cannot be empty.");
+                return false;
+            }
+
+            ArrayList<Product> products = productDAO.getAllProducts();
+            ArrayList<Product> matches = new ArrayList<>();
+
+            for (Product p : products) {
+                if (p.getProductName().equalsIgnoreCase(name)) {
+                    matches.add(p);
+                }
+            }
+
+            if (matches.isEmpty()) {
+                System.out.println("Product not found.");
+                return false;
+            }
+
+            if (matches.size() > 1) {
+
+                System.out.println("\nMultiple products found:");
+
+                for (Product p : matches) {
+                    System.out.println(
+                            "ID: " + p.getProductId()
+                                    + " | SKU: " + p.getSku()
+                                    + " | Name: " + p.getProductName()
+                    );
+                }
+
+                int selectedId = readPositiveInt(
+                        sc, "Enter Product ID to update: ");
+
+                for (Product p : matches) {
+                    if (p.getProductId() == selectedId) {
+                        product = p;
+                        break;
+                    }
+                }
+
+                if (product == null) {
+                    System.out.println("Invalid Product ID selection.");
+                    return false;
+                }
+
+            } else {
+                product = matches.get(0);
+            }
+
+        } else {
+
+            System.out.println("Invalid search choice.");
+            return false;
+        }
+
+        // ================= CHECK PRODUCT =================
+
+        if (product == null) {
+            System.out.println("Product not found.");
+            return false;
+        }
+
+        System.out.println("\nCurrent Product Details:");
+        displayProduct(product);
+
+        System.out.println("\n========== UPDATE DETAILS ==========");
+        System.out.println("Enter SAME to keep the existing value.");
+
+        // ================= UPDATE NAME =================
+
+        System.out.print("Product Name [" + product.getProductName() + "]: ");
+
+        while (true) {
+
+            String name = sc.nextLine().trim();
+
+            if (name.equalsIgnoreCase("SAME")) {
+                break;
+            }
+
+            if (name.isEmpty()) {
+                System.out.print("Name cannot be empty. Enter again: ");
+                continue;
+            }
+
+            product.setProductName(name);
+            break;
+        }
+
+        // ================= UPDATE SKU =================
+
+        System.out.print("SKU [" + product.getSku() + "]: ");
+
+        while (true) {
+
+            String sku = sc.nextLine().trim();
+
+            if (sku.equalsIgnoreCase("SAME")) {
+                break;
+            }
+
+            if (sku.isEmpty()) {
+                System.out.print("SKU cannot be empty. Enter again: ");
+                continue;
+            }
+
+            if (productDAO.skuExistsForOtherProduct(
+                    sku, product.getProductId())) {
+
+                System.out.print(
+                        "This SKU already belongs to another product. Enter a different SKU: "
+                );
+                continue;
+            }
+
+            product.setSku(sku);
+            break;
+        }
+
+        // ================= UPDATE CATEGORY =================
+
+        System.out.print("Category [" + product.getCategory() + "]: ");
+
+        String category = sc.nextLine().trim();
+
+        if (!category.equalsIgnoreCase("SAME")) {
+
+            if (category.isEmpty()) {
+                product.setCategory(null);
+            } else {
+                product.setCategory(category);
+            }
+        }
+
+        // ================= UPDATE PRICE =================
+
+        System.out.print("Price [" + product.getPrice() + "]: ");
+
+        while (true) {
+
+            String priceInput = sc.nextLine().trim();
+
+            if (priceInput.equalsIgnoreCase("SAME")) {
+                break;
+            }
+
+            try {
+
+                if (priceInput.isEmpty()) {
+                    System.out.print("Price cannot be empty. Enter again: ");
+                    continue;
+                }
+
+                BigDecimal price = new BigDecimal(priceInput);
+
+                if (price.compareTo(BigDecimal.ZERO) < 0) {
+                    System.out.print("Price cannot be negative. Enter again: ");
+                    continue;
+                }
+
+                product.setPrice(price);
+                break;
+
+            } catch (NumberFormatException e) {
+
+                System.out.print("Invalid price. Enter again: ");
+            }
+        }
+
+        // ================= UPDATE REORDER LEVEL =================
+
+        System.out.print(
+                "Reorder Level [" + product.getReorderLevel() + "]: ");
+
+        while (true) {
+
+            String reorderInput = sc.nextLine().trim();
+
+            if (reorderInput.equalsIgnoreCase("SAME")) {
+                break;
+            }
+
+            try {
+
+                if (reorderInput.isEmpty()) {
+                    System.out.print(
+                            "Reorder level cannot be empty. Enter again: ");
+                    continue;
+                }
+
+                int reorderLevel = Integer.parseInt(reorderInput);
+
+                if (reorderLevel < 0) {
+                    System.out.print(
+                            "Reorder level cannot be negative. Enter again: ");
+                    continue;
+                }
+
+                product.setReorderLevel(reorderLevel);
+                break;
+
+            } catch (NumberFormatException e) {
+
+                System.out.print("Invalid reorder level. Enter again: ");
+            }
+        }
+
+        // ================= SAVE CHANGES =================
+
+        System.out.println("\nSaving changes...");
+
+        boolean updated = productDAO.updateProduct(product);
+
+        if (updated) {
+
+            System.out.println("\nProduct updated successfully!");
+
+            System.out.println("\nUpdated Product Details:");
+            displayProduct(product);
+
+            return true;
+
+        } else {
+
+            System.out.println("Product update failed.");
+            return false;
+        }
+    }
+
+
+
+
 
     // ================= SEARCH BY SKU =================
 

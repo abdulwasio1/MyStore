@@ -81,6 +81,56 @@ public class ProductDAO {
         return -1;
     }
 
+    // Check whether SKU belongs to another product
+    public boolean skuExistsForOtherProduct(String sku, int productId)
+            throws SQLException {
+
+        String query = "SELECT 1 FROM products WHERE sku = ? AND product_id != ?";
+
+        try (
+                Connection con = dbConnection.getConnection();
+                PreparedStatement pst = con.prepareStatement(query)
+        ) {
+
+            pst.setString(1, sku);
+            pst.setInt(2, productId);
+
+            try (ResultSet rs = pst.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+
+    // Update existing product
+    public boolean updateProduct(Product product) throws SQLException {
+
+        String query = """
+            UPDATE products
+            SET product_name = ?,
+                sku = ?,
+                category = ?,
+                price = ?,
+                reorder_level = ?
+            WHERE product_id = ?
+            """;
+
+        try (
+                Connection con = dbConnection.getConnection();
+                PreparedStatement pst = con.prepareStatement(query)
+        ) {
+
+            pst.setString(1, product.getProductName());
+            pst.setString(2, product.getSku());
+            pst.setString(3, product.getCategory());
+            pst.setBigDecimal(4, product.getPrice());
+            pst.setInt(5, product.getReorderLevel());
+            pst.setInt(6, product.getProductId());
+
+            return pst.executeUpdate() > 0;
+        }
+    }
+
     public static boolean skuExists(String sku) throws SQLException {
 
         String query = "SELECT 1 FROM products WHERE sku = ?";
