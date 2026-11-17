@@ -288,21 +288,14 @@ public class Main {
 
             int productId = readPositiveInt(sc, "Enter Product ID: ");
 
-            ArrayList<Product> products = productDAO.getAllProducts();
-
-            for (Product p : products) {
-                if (p.getProductId() == productId) {
-                    product = p;
-                    break;
-                }
-            }
+            product = hashTable.searchById(productId);
 
         } else if (choice == 2) {
 
             System.out.print("Enter SKU: ");
             String sku = sc.nextLine().trim();
 
-            product = hashTable.search(sku);
+            product = hashTable.searchBySKU(sku);
 
         } else if (choice == 3) {
             System.out.print("Enter Product Name or Keyword: ");
@@ -570,7 +563,7 @@ public class Main {
         System.out.print("Enter product SKU: ");
         String sku = sc.nextLine().trim();
 
-        Product product = hashTable.search(sku);
+        Product product = hashTable.searchBySKU(sku);
 
         if (product == null) {
 
@@ -760,7 +753,7 @@ public class Main {
         System.out.print("Enter product SKU: ");
         String sku = sc.nextLine().trim();
 
-        Product product = hashTable.search(sku);
+        Product product = hashTable.searchBySKU(sku);
 
         if (product == null) {
 
@@ -1164,12 +1157,7 @@ public class Main {
                     return false;
                 }
 
-                for (Product p : products) {
-                    if (p.getProductId() == id) {
-                        selectedProduct = p;
-                        break;
-                    }
-                }
+                selectedProduct = hashTable.searchById(id);
             }
 
             // Search by SKU
@@ -1183,7 +1171,7 @@ public class Main {
                     return false;
                 }
 
-                selectedProduct = hashTable.search(sku);
+                selectedProduct = hashTable.searchBySKU(sku);
             }
 
             // Search by Product Name / Keyword
