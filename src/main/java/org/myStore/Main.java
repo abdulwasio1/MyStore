@@ -4,11 +4,13 @@ package org.myStore;
 import org.myStore.auth.AuthService;
 import org.myStore.auth.Role;
 import org.myStore.auth.Session;
+import org.myStore.dao.DashboardDAO;
 import org.myStore.dao.ProductDAO;
 import org.myStore.dao.StockRequestDAO;
 import org.myStore.dsa.ProductHashTable;
 import org.myStore.dsa.ProductPriorityHeap;
 import org.myStore.dsa.StockRequestQueue;
+import org.myStore.entities.DashboardStats;
 import org.myStore.entities.Product;
 import org.myStore.entities.StockRequest;
 import org.myStore.entities.StockRequest.RequestStatus;
@@ -29,6 +31,7 @@ public class Main {
         ProductDAO productDAO = new ProductDAO();
         StockRequestDAO requestDAO = new StockRequestDAO();
         AuthService authService = new AuthService();
+        DashboardDAO dashboardDAO = new DashboardDAO();
 
         ArrayList<Product> products = productDAO.getAllProducts();
 
@@ -47,15 +50,23 @@ public class Main {
 
             Session.login(user);
 
-            System.out.println("\n================================");
+            System.out.println("\n================================================");
             System.out.println("       WELCOME TO MYSTORE");
-            System.out.println("================================");
+            System.out.println("================================================");
             System.out.println("Logged in as: " + user.getUsername());
             System.out.println("Role: " + user.getRole());
 
             boolean logout = false;
 
             while (!logout) {
+                // Display dashboard whenever the user returns to the main menu
+                try {
+                    displayDashboard(dashboardDAO, user);
+                } catch (SQLException e) {
+                    System.out.println(
+                            "Unable to load dashboard: " + e.getMessage()
+                    );
+                }
 
                 System.out.println("\n========== MAIN MENU ==========");
 
@@ -69,6 +80,7 @@ public class Main {
                     System.out.println("6. Create Staff Account");
                     System.out.println("7. Process Stock Requests");
                     System.out.println("8. Update Product");
+                    System.out.println("9. Delete Product");
                 } else {
                     System.out.println("4. View All Products");
                     System.out.println("5. Submit Stock Request");
@@ -159,6 +171,22 @@ public class Main {
                                 System.out.println("Access denied!");
                             }
 
+                            break;
+                        case 9:
+                            if (Session.hasRole(Role.ADMIN)) {
+
+                                boolean deleted = deleteProduct(
+                                        sc, productDAO, hashTable
+                                );
+
+                                if (deleted) {
+                                    products = productDAO.getAllProducts();
+                                    hashTable = buildHashTable(products);
+                                }
+
+                            } else {
+                                System.out.println("Access denied!");
+                            }
                             break;
 
                         case 0:
@@ -277,60 +305,78 @@ public class Main {
             product = hashTable.search(sku);
 
         } else if (choice == 3) {
+            System.out.print("Enter Product Name or Keyword: ");
+            String search = sc.nextLine().trim();
 
-            System.out.print("Enter Product Name: ");
-            String name = sc.nextLine().trim();
-
-            if (name.isEmpty()) {
-                System.out.println("Product name cannot be empty.");
+            if (search.isEmpty()) {
+                System.out.println("Search keyword cannot be empty.");
                 return false;
             }
 
             ArrayList<Product> products = productDAO.getAllProducts();
             ArrayList<Product> matches = new ArrayList<>();
 
+            // Partial, case-insensitive linear search
             for (Product p : products) {
-                if (p.getProductName().equalsIgnoreCase(name)) {
+
+                if (p.getProductName() != null &&
+                        p.getProductName().toLowerCase()
+                                .contains(search.toLowerCase())) {
+
                     matches.add(p);
                 }
             }
 
             if (matches.isEmpty()) {
-                System.out.println("Product not found.");
+                System.out.println("No matching products found.");
                 return false;
             }
 
-            if (matches.size() > 1) {
+            System.out.println("\n========== SEARCH RESULTS ==========");
+            System.out.println("Matching Products: " + matches.size());
 
-                System.out.println("\nMultiple products found:");
+            System.out.printf(
+                    "%-6s %-25s %-18s %-18s%n",
+                    "ID", "PRODUCT NAME", "SKU", "CATEGORY"
+            );
 
-                for (Product p : matches) {
-                    System.out.println(
-                            "ID: " + p.getProductId()
-                                    + " | SKU: " + p.getSku()
-                                    + " | Name: " + p.getProductName()
-                    );
-                }
+            System.out.println("----------------------------------------------------------------");
 
-                int selectedId = readPositiveInt(
-                        sc, "Enter Product ID to update: ");
+            for (Product p : matches) {
 
-                for (Product p : matches) {
-                    if (p.getProductId() == selectedId) {
-                        product = p;
-                        break;
-                    }
-                }
-
-                if (product == null) {
-                    System.out.println("Invalid Product ID selection.");
-                    return false;
-                }
-
-            } else {
-                product = matches.get(0);
+                System.out.printf(
+                        "%-6d %-25.25s %-18.18s %-18.18s%n",
+                        p.getProductId(),
+                        p.getProductName(),
+                        p.getSku(),
+                        p.getCategory() == null ? "N/A" : p.getCategory()
+                );
             }
 
+            System.out.println("----------------------------------------------------------------");
+
+            int selectedId = readPositiveInt(
+                    sc, "Enter Product ID to update (0 to cancel): "
+            );
+
+            if (selectedId == 0) {
+                System.out.println("Update cancelled.");
+                return false;
+            }
+
+            // Only allow selection from displayed search results
+            for (Product p : matches) {
+
+                if (p.getProductId() == selectedId) {
+                    product = p;
+                    break;
+                }
+            }
+
+            if (product == null) {
+                System.out.println("Invalid Product ID selection.");
+                return false;
+            }
         } else {
 
             System.out.println("Invalid search choice.");
@@ -1027,4 +1073,231 @@ public class Main {
             }
         }
     }
+
+
+    private static void displayDashboard(
+            DashboardDAO dashboardDAO,
+            User user) throws SQLException {
+
+        boolean isAdmin = user.getRole() == Role.ADMIN;
+
+        DashboardStats stats = dashboardDAO.getDashboardStats(
+                user.getUserId(), isAdmin
+        );
+
+        System.out.println("\n");
+        System.out.println("==============================================");
+        System.out.println("              MYSTORE DASHBOARD");
+        System.out.println("==============================================");
+
+        System.out.println("Welcome, " + user.getUsername());
+        System.out.println("Role: " + user.getRole());
+
+        System.out.println("----------------------------------------------");
+        System.out.println("             INVENTORY OVERVIEW");
+        System.out.println("----------------------------------------------");
+
+        System.out.printf("%-28s : %d%n",
+                "Total Products", stats.getTotalProducts());
+
+        System.out.printf("%-28s : %d%n",
+                "Total Units in Stock", stats.getTotalUnits());
+
+        System.out.printf("%-28s : %d%n",
+                "Low Stock Products", stats.getLowStockProducts());
+
+        System.out.printf("%-28s : %d%n",
+                "Out of Stock Products", stats.getOutOfStockProducts());
+
+        if (isAdmin) {
+            System.out.printf("%-28s : %s%n",
+                    "Total Inventory Value",
+                    stats.getInventoryValue().toPlainString());
+        }
+
+        System.out.println("----------------------------------------------");
+
+        if (isAdmin) {
+            System.out.println("Pending Stock Requests: "
+                    + stats.getPendingRequests());
+        } else {
+            System.out.println("My Pending Requests: "
+                    + stats.getPendingRequests());
+        }
+
+        System.out.println("==============================================");
+    }
+
+
+    private static boolean deleteProduct(
+            Scanner sc,
+            ProductDAO productDAO,
+            ProductHashTable hashTable) {
+
+        Session.requireAdmin();
+
+        try {
+            ArrayList<Product> products = productDAO.getAllProducts();
+
+            if (products.isEmpty()) {
+                System.out.println("No products available to delete.");
+                return false;
+            }
+
+            System.out.println("\n========== DELETE PRODUCT ==========");
+            System.out.println("1. Search by Product ID");
+            System.out.println("2. Search by SKU");
+            System.out.println("3. Search by Product Name / Keyword");
+            System.out.println("0. Cancel");
+
+            int choice = readNonNegativeInt(sc, "Enter choice: ");
+
+            Product selectedProduct = null;
+
+            // Search by Product ID
+            if (choice == 1) {
+
+                int id = readNonNegativeInt(sc, "Enter Product ID: ");
+
+                if (id == 0) {
+                    System.out.println("Deletion cancelled.");
+                    return false;
+                }
+
+                for (Product p : products) {
+                    if (p.getProductId() == id) {
+                        selectedProduct = p;
+                        break;
+                    }
+                }
+            }
+
+            // Search by SKU
+            else if (choice == 2) {
+
+                System.out.print("Enter Product SKU: ");
+                String sku = sc.nextLine().trim();
+
+                if (sku.isEmpty()) {
+                    System.out.println("SKU cannot be empty.");
+                    return false;
+                }
+
+                selectedProduct = hashTable.search(sku);
+            }
+
+            // Search by Product Name / Keyword
+            else if (choice == 3) {
+
+                System.out.print("Enter Product Name or Keyword: ");
+                String keyword = sc.nextLine().trim();
+
+                if (keyword.isEmpty()) {
+                    System.out.println("Search keyword cannot be empty.");
+                    return false;
+                }
+
+                ArrayList<Product> matches = new ArrayList<>();
+
+                for (Product p : products) {
+                    if (p.getProductName().toLowerCase()
+                            .contains(keyword.toLowerCase())) {
+                        matches.add(p);
+                    }
+                }
+
+                if (matches.isEmpty()) {
+                    System.out.println("No matching products found.");
+                    return false;
+                }
+
+                System.out.println("\n========== MATCHING PRODUCTS ==========");
+                System.out.printf("%-8s %-25s %-18s %-15s%n",
+                        "ID", "Product Name", "SKU", "Category");
+
+                for (Product p : matches) {
+                    System.out.printf("%-8d %-25s %-18s %-15s%n",
+                            p.getProductId(),
+                            p.getProductName(),
+                            p.getSku(),
+                            p.getCategory());
+                }
+
+                System.out.println("---------------------------------------");
+                System.out.println("Enter 0 to cancel.");
+
+                int selectedId =
+                        readNonNegativeInt(sc, "Select Product ID: ");
+
+                if (selectedId == 0) {
+                    System.out.println("Deletion cancelled.");
+                    return false;
+                }
+
+                // Ensure selected ID belongs to search results
+                for (Product p : matches) {
+                    if (p.getProductId() == selectedId) {
+                        selectedProduct = p;
+                        break;
+                    }
+                }
+
+                if (selectedProduct == null) {
+                    System.out.println("Invalid Product ID selection.");
+                    return false;
+                }
+            }
+
+            else if (choice == 0) {
+                System.out.println("Deletion cancelled.");
+                return false;
+            }
+
+            else {
+                System.out.println("Invalid choice.");
+                return false;
+            }
+
+            if (selectedProduct == null) {
+                System.out.println("Product not found.");
+                return false;
+            }
+
+            // Display selected product
+            System.out.println("\n========== SELECTED PRODUCT ==========");
+            displayProduct(selectedProduct);
+
+            System.out.println("\nWARNING: This action will permanently delete:");
+            System.out.println("1. The selected product");
+            System.out.println("2. All associated stock requests");
+            System.out.println("3. Pending, approved, and rejected requests");
+
+            System.out.print("\nAre you sure? (Y/N): ");
+            String confirmation = sc.nextLine().trim();
+
+            if (!confirmation.equalsIgnoreCase("Y")) {
+                System.out.println("Deletion cancelled.");
+                return false;
+            }
+
+            boolean deleted =
+                    productDAO.deleteProduct(selectedProduct.getProductId());
+
+            if (deleted) {
+                System.out.println(
+                        "\nProduct and associated stock requests deleted successfully!");
+                return true;
+            }
+
+            System.out.println("Product could not be deleted.");
+            return false;
+
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            return false;
+        }
+    }
+
+
+
 }

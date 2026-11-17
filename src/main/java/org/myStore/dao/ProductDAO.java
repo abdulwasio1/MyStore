@@ -81,6 +81,53 @@ public class ProductDAO {
         return -1;
     }
 
+
+    public boolean deleteProduct(int productId) throws SQLException {
+
+        String deleteRequests =
+                "DELETE FROM stock_requests WHERE product_id = ?";
+
+        String deleteProduct =
+                "DELETE FROM products WHERE product_id = ?";
+
+        try (Connection con = dbConnection.getConnection()) {
+
+            try {
+                con.setAutoCommit(false);
+
+                // Delete associated stock requests first
+                try (PreparedStatement pst =
+                             con.prepareStatement(deleteRequests)) {
+
+                    pst.setInt(1, productId);
+                    pst.executeUpdate();
+                }
+
+                // Delete the product
+                int rowsAffected;
+
+                try (PreparedStatement pst =
+                             con.prepareStatement(deleteProduct)) {
+
+                    pst.setInt(1, productId);
+                    rowsAffected = pst.executeUpdate();
+                }
+
+                con.commit();
+
+                return rowsAffected > 0;
+
+            } catch (SQLException e) {
+                con.rollback();
+                throw e;
+
+            } finally {
+                con.setAutoCommit(true);
+            }
+        }
+    }
+
+
     // Check whether SKU belongs to another product
     public boolean skuExistsForOtherProduct(String sku, int productId)
             throws SQLException {
